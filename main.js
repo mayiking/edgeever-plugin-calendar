@@ -189,6 +189,7 @@ async function renderCalendarPanel(container, context, opts) {
   await refresh();
 
   async function refresh() {
+    console.log('[日历] refresh 开始', state.year, state.month + 1);
     nav.querySelector('.cal-title').textContent = state.year + ' 年 ' + (state.month + 1) + ' 月';
 
     cells.innerHTML = '';
@@ -197,8 +198,10 @@ async function renderCalendarPanel(container, context, opts) {
     for (let i = 0; i < firstDow; i++) {
       const blank = document.createElement('div');
       blank.className = 'cal-cell cal-blank';
+      blank.textContent = '·';
       cells.appendChild(blank);
     }
+    console.log('[日历] firstDow=', firstDow, '添加了', firstDow, '个空白格');
 
     state.loading = true;
     const cacheKey = state.year + '-' + String(state.month + 1).padStart(2, '0');
@@ -217,6 +220,7 @@ async function renderCalendarPanel(container, context, opts) {
 
     const today = dateKey(new Date());
     const daysInMonth = new Date(state.year, state.month + 1, 0).getDate();
+    console.log('[日历] 今天=', today, '本月天数=', daysInMonth, '数据天数=', Object.keys(notesByDay).length);
     for (let d = 1; d <= daysInMonth; d++) {
       const k = state.year + '-' + String(state.month + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
       const items = notesByDay[k] || [];
@@ -393,8 +397,8 @@ const PANEL_CSS =
   '.cal-grid{display:flex;flex-direction:column;gap:6px;padding:0 4px;}' +
   '.cal-weekday,.cal-cell{aspect:1;display:flex;align-items:center;justify-content:center;}' +
   '.cal-weekday{font-size:12px;color:#6b7280;font-weight:500;aspect:auto;height:22px;text-transform:uppercase;}' +
-  '.cal-cells{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}' +
-  '.cal-cell{background:transparent;border:1px solid transparent;color:inherit;cursor:pointer;border-radius:10px;padding:4px;position:relative;flex-direction:column;font-size:14px;transition:background .12s;border:1px solid #f3f4f6;}' +
+  '.cal-cells{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;min-height:240px;}' +
+  '.cal-cell{background:#fff;border:1px solid #e5e7eb;color:#1f2937;cursor:pointer;border-radius:10px;padding:4px;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;font-size:14px;transition:background .12s;min-height:36px;min-width:36px;}' +
   '.cal-cell.cal-blank{cursor:default;border-color:transparent;}' +
   '.cal-cell.cal-day:hover{background:#f9fafb;border-color:#e5e7eb;}' +
   /* 今天：macOS 风格红字 */
