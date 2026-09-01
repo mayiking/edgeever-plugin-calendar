@@ -2,7 +2,7 @@
   "type": "plugin",
   "id": "com.zhangyan.edgeever.calendar",
   "name": "\u65e5\u5386",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "apiVersion": "1",
   "description": "macOS \u5907\u5fd8\u5f55\u98ce\u683c\u7684\u6708\u5386\u89c6\u56fe\uff1b\u6309\u7b14\u8bb0\u66f4\u65b0\u65f6\u95f4\u805a\u5408\uff1b\u70b9\u51fb\u65e5\u671f\u67e5\u770b\u5f53\u65e5\u8bb0\u5f55\uff0c\u70b9\u51fb\u8bb0\u5f55\u76f4\u63a5\u6253\u5f00\u3002",
   "author": "zhangyan",
