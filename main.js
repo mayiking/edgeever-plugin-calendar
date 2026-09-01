@@ -339,44 +339,9 @@ async function fetchMonthData(context, year, month) {
     }
   }
 
-  // 再额外拉附件（仅本月日期）：用资源的 list + 资源本身的 updatedAt
-  // API 设计：resources.list() 不带日期过滤；为节省开销，仅对本月有更新的笔记查附件
-  // 实际策略：取所有笔记的附件（流式）
-  try {
-    let resOffset = 0;
-    const resPageSize = 100;
-    while (true) {
-      let resPage;
-      try {
-        if (context.resources && context.resources.list) {
-          // SDK 支持 resources.list
-          resPage = await context.resources.list();
-          // resPage 可能是数组或 {resources: [...]} — 做兼容
-          const arr = Array.isArray(resPage) ? resPage : (resPage.resources || []);
-          for (const r of arr) {
-            const d = new Date(r.updatedAt || r.createdAt);
-            if (d >= start && d <= end && r.noteId) {
-              const k = dateKey(d);
-              if (!result[k]) result[k] = [];
-              // 避免同一 noteId 重复
-              if (!result[k].some((x) => x.id === r.noteId)) {
-                result[k].push({ id: r.noteId, title: '附件：' + (r.filename || '未命名'), type: 'attachment' });
-              }
-            }
-          }
-          // SDK 是否分页未知，保守跳出
-          break;
-        } else {
-          break;
-        }
-      } catch (e) {
-        console.warn('[日历] resources.list 失败，跳过附件', e);
-        break;
-      }
-    }
-  } catch (e) {
-    // ignore
-  }
+  // 附件聚合：当前 EdgeEver SDK 不支持 resources:read 权限
+  // 待官方开放后可加 resources:read 权限 + 启用这段代码
+  // 暂时只聚合笔记的 updatedAt
 
   // 排序每天的 items：笔记在前，附件在后
   Object.keys(result).forEach((k) => {
