@@ -1,0 +1,17 @@
+{
+  "type": "plugin",
+  "id": "com.zhangyan.edgeever.calendar",
+  "name": "驻村日历",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "description": "在侧边栏展示日历视图，每天显示当日笔记数；点击日期查看该日笔记并跳转到原笔记。",
+  "author": "zhangyan",
+  "entry": "./main.js",
+  "platforms": ["web", "desktop"],
+  "permissions": [
+    "notes:read",
+    "ui:panels",
+    "ui:commands",
+    "ui:notices"
+  ]
+}
