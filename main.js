@@ -1,13 +1,11 @@
 /* ============================================================
- * 驻村日历 — EdgeEver 插件
- * 在侧边栏挂一个日历面板；按日期聚合笔记；点击日期跳转笔记
- * 单文件 bundle（ESM），无依赖（无 import 相对模块）
- * EdgeEver 加载此文件后会执行 default export 拿到 activate(context)
+ * 驻村日历 — EdgeEver 插件 v1.0.3
+ * 修复 panels.open 缺失：改为命令直接弹出 overlay 浮层
  * ============================================================ */
 
 export default {
   activate(context) {
-    // ---- 1. 注册侧边栏面板 ----
+    // ---- 注册面板（侧边栏挂载）----
     let unregisterPanel = null;
     try {
       unregisterPanel = context.ui.panels.register({
@@ -19,49 +17,133 @@ export default {
       });
     } catch (e) {
       console.error('[驻村日历] 注册面板失败', e);
-      context.ui.showNotice('驻村日历：注册面板失败 - ' + (e?.message || e));
     }
 
-    // ---- 2. 注册命令面板命令（Cmd+K）----
+    // ---- 注册命令：弹窗浮层打开日历 ----
     let unregisterCmd = null;
     try {
       unregisterCmd = context.commands.register({
         id: 'zhucun-calendar.open',
         title: '打开驻村日历',
-        run: async () => {
-          try {
-            await context.ui.panels.open('zhucun-calendar');
-          } catch (e) {
-            console.error('[驻村日历] 打开面板失败', e);
-          }
+        run() {
+          openCalendarOverlay(context);
         },
       });
     } catch (e) {
       console.error('[驻村日历] 注册命令失败', e);
     }
 
-    // ---- 3. 提示 ----
+    // ---- 注册第二个命令：弹窗直接跳到今天 ----
+    let unregisterTodayCmd = null;
     try {
-      context.ui.showNotice('驻村日历已加载 · ⌘K 输入"打开驻村日历"');
+      unregisterTodayCmd = context.commands.register({
+        id: 'zhucun-calendar.today',
+        title: '驻村日历 · 跳到今天',
+        run() {
+          openCalendarOverlay(context, { goToday: true });
+        },
+      });
+    } catch (e) {}
+
+    try {
+      context.ui.showNotice('驻村日历已加载 · ⌘K 输入"驻村日历"打开');
     } catch (_) {}
 
     return () => {
       try { unregisterPanel && unregisterPanel(); } catch (_) {}
       try { unregisterCmd && unregisterCmd(); } catch (_) {}
+      try { unregisterTodayCmd && unregisterTodayCmd(); } catch (_) {}
     };
   },
 };
 
 /* ============================================================
- * 面板渲染
+ * 浮层模式：不依赖 ui.panels.open，命令触发时直接挂 DOM
  * ============================================================ */
-async function renderCalendarPanel(container, context) {
-  container.innerHTML = '';
-  container.classList.add('zcc-container');
+let activeOverlayEl = null;
+let activeOverlayRoot = null;
 
-  const style = document.createElement('style');
-  style.textContent = PANEL_CSS;
-  container.appendChild(style);
+function openCalendarOverlay(context, opts) {
+  // 已有浮层则聚焦
+  if (activeOverlayEl) {
+    activeOverlayEl.style.zIndex = '9999';
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'zcc-overlay';
+  overlay.innerHTML =
+    '<div class="zcc-overlay-backdrop"></div>' +
+    '<div class="zcc-overlay-panel">' +
+      '<div class="zcc-overlay-head">' +
+        '<span class="zcc-overlay-title">🗓️ 驻村日历</span>' +
+        '<button class="zcc-overlay-close" type="button" aria-label="关闭">×</button>' +
+      '</div>' +
+      '<div class="zcc-overlay-body"></div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  activeOverlayEl = overlay;
+  activeOverlayRoot = overlay.querySelector('.zcc-overlay-body');
+
+  // 关闭逻辑
+  const close = () => {
+    try { overlay.remove(); } catch (_) {}
+    activeOverlayEl = null;
+    activeOverlayRoot = null;
+  };
+  overlay.querySelector('.zcc-overlay-close').addEventListener('click', close);
+  overlay.querySelector('.zcc-overlay-backdrop').addEventListener('click', close);
+  // ESC 关闭
+  const onKey = (ev) => {
+    if (ev.key === 'Escape') {
+      close();
+      document.removeEventListener('keydown', onKey);
+    }
+  };
+  document.addEventListener('keydown', onKey);
+
+  // 挂日历到浮层 body
+  renderCalendarPanel(activeOverlayRoot, context, {
+    onNoteOpen: (id) => {
+      // 打开笔记前先关掉浮层，避免挡住
+      close();
+      try {
+        context.ui.openNote(id).catch((e) => {
+          console.error('[驻村日历] 打开笔记失败', e);
+        });
+      } catch (e) {
+        console.error('[驻村日历] openNote 失败', e);
+      }
+    },
+  }).then(() => {
+    if (opts && opts.goToday) {
+      // 模拟点击"今天"按钮
+      const todayBtn = activeOverlayRoot && activeOverlayRoot.querySelector('.zcc-today');
+      if (todayBtn) todayBtn.click();
+    }
+  }).catch((e) => {
+    console.error('[驻村日历] 渲染失败', e);
+    activeOverlayRoot.innerHTML = '<div style="padding:24px;color:#dc2626">日历加载失败：' + (e && e.message ? e.message : e) + '</div>';
+  });
+}
+
+/* ============================================================
+ * 面板渲染（同时支持面板容器 + 浮层 body 容器）
+ * ============================================================ */
+async function renderCalendarPanel(container, context, opts) {
+  const isOverlay = !container.classList.contains('zcc-container');
+  if (!isOverlay) {
+    container.innerHTML = '';
+    container.classList.add('zcc-container');
+  }
+
+  // 样式注入（仅一次）
+  if (!document.getElementById('zcc-styles')) {
+    const style = document.createElement('style');
+    style.id = 'zcc-styles';
+    style.textContent = PANEL_CSS;
+    document.head.appendChild(style);
+  }
 
   const state = {
     year: new Date().getFullYear(),
@@ -208,6 +290,10 @@ async function renderCalendarPanel(container, context) {
       el.addEventListener('click', function (ev) {
         ev.preventDefault();
         const id = el.dataset.id;
+        if (opts && opts.onNoteOpen) {
+          opts.onNoteOpen(id);
+          return;
+        }
         context.ui.openNote(id).catch(function (e) {
           console.error('[驻村日历] 打开笔记失败', e);
           try { context.ui.showNotice('打开笔记失败：' + (e && e.message ? e.message : e)); } catch (_) {}
@@ -277,32 +363,45 @@ function escapeHtml(s) {
 }
 
 const PANEL_CSS =
-  '.zcc-container{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--color-text,#1f2937);padding:8px;font-size:13px;}' +
+  /* 容器 */
+  '.zcc-container{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:#1f2937;padding:8px;font-size:13px;}' +
   '.zcc-wrap{display:flex;flex-direction:column;gap:8px;}' +
-  '.zcc-nav{display:grid;grid-template-columns:28px 1fr 28px auto;gap:6px;align-items:center;padding:4px 6px;}' +
-  '.zcc-nav .zcc-title{font-weight:600;text-align:center;font-size:13px;}' +
-  '.zcc-btn{background:transparent;border:1px solid var(--color-border,#e5e7eb);color:inherit;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:14px;line-height:1;transition:background .15s;}' +
-  '.zcc-btn:hover{background:var(--color-surface-muted,#f3f4f6);}' +
-  '.zcc-btn.zcc-today{font-size:12px;padding:4px 10px;}' +
-  '.zcc-grid{display:flex;flex-direction:column;gap:2px;padding:0 4px;}' +
+  /* 浮层 */
+  '.zcc-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;}' +
+  '.zcc-overlay-backdrop{position:absolute;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(2px);}' +
+  '.zcc-overlay-panel{position:relative;background:#fff;color:#1f2937;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.25);width:480px;max-width:92vw;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;}' +
+  '.zcc-overlay-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e5e7eb;}' +
+  '.zcc-overlay-title{font-weight:600;font-size:15px;}' +
+  '.zcc-overlay-close{background:transparent;border:0;color:#6b7280;font-size:24px;line-height:1;cursor:pointer;padding:0 4px;border-radius:4px;}' +
+  '.zcc-overlay-close:hover{background:#f3f4f6;color:#1f2937;}' +
+  '.zcc-overlay-body{padding:8px 16px 16px;overflow-y:auto;}' +
+  /* 导航 */
+  '.zcc-nav{display:grid;grid-template-columns:32px 1fr 32px auto;gap:8px;align-items:center;padding:8px 4px;}' +
+  '.zcc-nav .zcc-title{font-weight:600;text-align:center;font-size:14px;}' +
+  '.zcc-btn{background:transparent;border:1px solid #e5e7eb;color:inherit;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:16px;line-height:1;transition:background .15s;}' +
+  '.zcc-btn:hover{background:#f3f4f6;}' +
+  '.zcc-btn.zcc-today{font-size:12px;padding:5px 12px;}' +
+  /* 网格 */
+  '.zcc-grid{display:flex;flex-direction:column;gap:4px;padding:0 4px;}' +
   '.zcc-weekday,.zcc-cell{aspect:1;display:flex;align-items:center;justify-content:center;}' +
-  '.zcc-weekday{font-size:11px;color:var(--color-text-muted,#6b7280);font-weight:500;aspect:auto;height:18px;}' +
-  '.zcc-cells{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}' +
-  '.zcc-cell{background:transparent;border:1px solid transparent;color:inherit;cursor:pointer;border-radius:6px;padding:2px;position:relative;flex-direction:column;font-size:12px;transition:background .12s;}' +
+  '.zcc-weekday{font-size:11px;color:#6b7280;font-weight:500;aspect:auto;height:20px;}' +
+  '.zcc-cells{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}' +
+  '.zcc-cell{background:transparent;border:1px solid transparent;color:inherit;cursor:pointer;border-radius:8px;padding:4px;position:relative;flex-direction:column;font-size:13px;transition:background .12s;}' +
   '.zcc-cell.zcc-blank{cursor:default;}' +
-  '.zcc-cell.zcc-day:hover{background:var(--color-surface-muted,#f3f4f6);}' +
-  '.zcc-cell.zcc-today{background:var(--color-surface-muted,#f3f4f6);font-weight:700;}' +
-  '.zcc-cell.zcc-selected{background:var(--color-accent,#3b82f6)!important;color:var(--color-accent-foreground,#fff);}' +
+  '.zcc-cell.zcc-day:hover{background:#f3f4f6;}' +
+  '.zcc-cell.zcc-today{background:#fef3c7;font-weight:700;}' +
+  '.zcc-cell.zcc-selected{background:#3b82f6!important;color:#fff;font-weight:700;}' +
   '.zcc-cell.zcc-selected .zcc-badge{background:rgba(255,255,255,.3);color:#fff;}' +
-  '.zcc-day-num{font-size:12px;}' +
-  '.zcc-badge{position:absolute;bottom:2px;right:2px;background:var(--color-accent,#3b82f6);color:var(--color-accent-foreground,#fff);border-radius:8px;padding:0 5px;min-width:14px;height:14px;line-height:14px;font-size:9px;font-weight:600;}' +
-  '.zcc-detail{border-top:1px solid var(--color-border,#e5e7eb);padding:8px 4px 4px;max-height:320px;overflow-y:auto;}' +
-  '.zcc-detail-empty{color:var(--color-text-muted,#6b7280);font-size:12px;text-align:center;padding:12px 0;}' +
-  '.zcc-detail-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:11px;color:var(--color-text-muted,#6b7280);}' +
-  '.zcc-detail-day{font-weight:600;color:var(--color-text,#1f2937);}' +
-  '.zcc-detail-list{display:flex;flex-direction:column;gap:4px;}' +
-  '.zcc-note{display:flex;flex-direction:column;gap:2px;padding:6px 8px;border-radius:6px;background:var(--color-surface-muted,#f9fafb);text-decoration:none;color:inherit;transition:background .12s;cursor:pointer;}' +
-  '.zcc-note:hover{background:var(--color-surface,#f3f4f6);}' +
-  '.zcc-note-title{font-size:12px;font-weight:500;line-height:1.3;}' +
-  '.zcc-note-excerpt{font-size:11px;color:var(--color-text-muted,#6b7280);line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+  '.zcc-day-num{font-size:13px;}' +
+  '.zcc-badge{position:absolute;bottom:3px;right:3px;background:#3b82f6;color:#fff;border-radius:9px;padding:0 5px;min-width:16px;height:16px;line-height:16px;font-size:10px;font-weight:600;}' +
+  /* 详情 */
+  '.zcc-detail{border-top:1px solid #e5e7eb;padding:12px 4px 4px;max-height:300px;overflow-y:auto;}' +
+  '.zcc-detail-empty{color:#6b7280;font-size:12px;text-align:center;padding:16px 0;}' +
+  '.zcc-detail-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;color:#6b7280;}' +
+  '.zcc-detail-day{font-weight:600;color:#1f2937;}' +
+  '.zcc-detail-list{display:flex;flex-direction:column;gap:6px;}' +
+  '.zcc-note{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:6px;background:#f9fafb;text-decoration:none;color:inherit;transition:background .12s;cursor:pointer;border:1px solid transparent;}' +
+  '.zcc-note:hover{background:#f3f4f6;border-color:#e5e7eb;}' +
+  '.zcc-note-title{font-size:13px;font-weight:500;line-height:1.4;}' +
+  '.zcc-note-excerpt{font-size:11px;color:#6b7280;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
   '';
